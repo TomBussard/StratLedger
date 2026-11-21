@@ -48,7 +48,7 @@ class InvestmentStrategies:
         if returns_df.empty:
             return 0
 
-        cov_matrix = returns_df.cov() * np.sqrt(252)
+        cov_matrix = returns_df.cov() * 252
         n_assets = len(returns_df.columns)
         if n_assets == 0:
             return 0
@@ -74,10 +74,10 @@ class InvestmentStrategies:
                     SELECT * FROM "{table_name}"
                     WHERE Date <= ?
                     ORDER BY Date DESC
-                    LIMIT 252
+                    LIMIT ?
                 """,
                     conn,
-                    params=(date,),
+                    params=(date, self.volatility_window + 1),
                 )
 
                 if df.empty:
@@ -91,12 +91,14 @@ class InvestmentStrategies:
                     print(f"Pas de colonne Close pour {ticker}")
                     continue
 
+                # Calculate forward in time, then put the latest observations first for the signals.
+                df = df.iloc[::-1].copy()
                 df["Returns"] = self.calculate_returns(df["Close"])
                 df["Volatility"] = df["Returns"].rolling(
                     window=self.volatility_window
                 ).std() * np.sqrt(252)
 
-                market_data[ticker] = df
+                market_data[ticker] = df.iloc[::-1].head(self.volatility_window).set_index("Date", drop=False)
 
             except Exception as e:
                 print(f"Erreur lors du chargement des données pour {ticker}: {e}")
