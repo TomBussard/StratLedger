@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 
 class PortfolioAnalyzer:
@@ -23,48 +24,30 @@ class PortfolioAnalyzer:
         return [d.strftime('%Y-%m-%d') for d in dates]
 
     def get_portfolio_positions(self, portfolio_id, date):
-        """Récupère les positions du portefeuille à une date donnée"""
-        with sqlite3.connect(self.db_name) as conn:
-            query = """
-                WITH DailyPositions AS (
-                    SELECT 
-                        d.produit_id,
-                        pr.ticker,
-                        pr.type,
-                        d.date,
-                        d.type_operation,
-                        d.quantite,
-                        SUM(CASE 
-                            WHEN d.type_operation = 'achat' THEN d.quantite 
-                            ELSE -d.quantite 
-                        END) OVER (
-                            PARTITION BY d.produit_id 
-                            ORDER BY d.date
-                        ) as running_position
-                    FROM Deals d
-                    JOIN Products pr ON d.produit_id = pr.id
-                    WHERE d.portefeuille_id = ? AND d.date <= ?
-                    ORDER BY d.date
-                )
-                SELECT 
-                    ticker,
-                    type,
-                    running_position as position
-                FROM DailyPositions
-                WHERE date <= ?
-                GROUP BY ticker
-                HAVING running_position > 0
-            """
-            return pd.read_sql_query(query, conn, params=(portfolio_id, date, date))
+        """Sum signed trades up to the valuation date for each product."""
+        query = """
+            SELECT pr.ticker, pr.type,
+                   SUM(CASE WHEN d.type_operation = 'achat' THEN d.quantite
+                            ELSE -d.quantite END) AS position
+            FROM Deals AS d
+            JOIN Products AS pr ON pr.id = d.produit_id
+            WHERE d.portefeuille_id = ? AND d.date <= ?
+            GROUP BY d.produit_id, pr.ticker, pr.type
+            HAVING SUM(CASE WHEN d.type_operation = 'achat' THEN d.quantite
+                            ELSE -d.quantite END) > 0
+        """
+        with closing(sqlite3.connect(self.db_name)) as conn:
+            return pd.read_sql_query(query, conn, params=(portfolio_id, date))
 
     def get_asset_price_and_return(self, ticker, date):
         """Récupère le prix et le rendement d'un actif à une date donnée"""
-        with sqlite3.connect(self.db_name) as conn:
+        with closing(sqlite3.connect(self.db_name)) as conn:
+            table_name = (ticker + "_data").replace('"', '""')
             query = f"""
                 SELECT 
                     Close as price,
                     Returns as daily_return
-                FROM {ticker}_data 
+                FROM "{table_name}" 
                 WHERE Date <= ?
                 ORDER BY Date DESC
                 LIMIT 1
@@ -153,7 +136,8 @@ class PortfolioAnalyzer:
         
         # Drawdown maximum
         cumulative_returns = (1 + weekly_returns['return']).cumprod()
-        rolling_max = cumulative_returns.expanding().max()
+        # Start at one so a loss in the first observed week counts towards drawdown.
+        rolling_max = cumulative_returns.cummax().clip(lower=1.0)
         drawdowns = cumulative_returns / rolling_max - 1
         drawdown_max = drawdowns.min()
         
