@@ -1,4 +1,5 @@
 """Use the dashboard's position logic to value a small fictional ledger."""
+
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -25,8 +26,9 @@ def example():
             """)
             prices = [100, 104, 101, 98, 105, 102]
             for date, price in zip(dates, prices):
-                connection.execute("INSERT INTO DEMO_data VALUES (?, ?, ?)",
-                                   (date.strftime("%Y-%m-%d"), price, 0))
+                connection.execute(
+                    "INSERT INTO DEMO_data VALUES (?, ?, ?)", (date.strftime("%Y-%m-%d"), price, 0)
+                )
             connection.commit()
         analyser = PortfolioAnalyzer(str(database))
         rows = []
@@ -39,4 +41,3 @@ def example():
 
 if __name__ == "__main__":
     print(example().to_string(index=False))
-

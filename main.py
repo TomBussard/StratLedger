@@ -1,17 +1,12 @@
-import sqlite3
 import os
 import subprocess
 import sys
 from data_collector import DataCollector
 from base_update import BaseUpdater
-from datetime import datetime, timedelta
+from datetime import datetime
 
-DB_NAME = "fund_management.db"
+from ledger_service import DB_NAME, get_connection
 
-def get_connection():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 def fetch_market_data():
     with get_connection() as conn:
@@ -25,11 +20,13 @@ def fetch_market_data():
     collector.fetch_data()
     print("Données de marché récupérées.")
 
+
 def execute_strategies():
     updater = BaseUpdater()
     updater.store_deals()
     updater.update_portfolios()
     print("Stratégies appliquées.")
+
 
 def update_portfolio_stats():
     with get_connection() as conn:
@@ -39,9 +36,10 @@ def update_portfolio_stats():
 
         for portfolio in portfolios:
             portfolio_id = portfolio[0]
-            stats = conn.execute("""
+            stats = conn.execute(
+                """
                 WITH MonthlyStats AS (
-                    SELECT 
+                    SELECT
                         strftime('%Y-%m', date) as month,
                         AVG(volatilite_periode),
                         SUM(CASE WHEN type_operation = 'achat' THEN quantite ELSE -quantite END),
@@ -52,32 +50,42 @@ def update_portfolio_stats():
                     GROUP BY strftime('%Y-%m', date)
                 )
                 SELECT * FROM MonthlyStats ORDER BY month DESC LIMIT 1
-            """, (portfolio_id,)).fetchone()
+            """,
+                (portfolio_id,),
+            ).fetchone()
 
             if stats:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO Portfolio_Stats (
-                        portfolio_id, date, volatilite_realisee, 
+                        portfolio_id, date, volatilite_realisee,
                         rendement_realise, nombre_trades_mois
                     ) VALUES (?, ?, ?, ?, ?)
-                """, (
-                    portfolio_id,
-                    datetime.now().strftime("%Y-%m-%d"),
-                    stats[1], stats[4], stats[3]
-                ))
+                """,
+                    (
+                        portfolio_id,
+                        datetime.now().strftime("%Y-%m-%d"),
+                        stats[1],
+                        stats[4],
+                        stats[3],
+                    ),
+                )
 
         conn.commit()
     print("Statistiques mises à jour.")
 
+
 def setup_database_if_needed():
     if not os.path.exists(DB_NAME):
         from database_manager import DatabaseManager
+
         db_manager = DatabaseManager()
         db_manager.connect()
         db_manager.create_tables()
         db_manager.populate_initial_data()
         db_manager.close()
-        print("✅ Base de données initialisée.")
+        print(" Base de données initialisée.")
+
 
 def main():
     print("Initialisation du projet...")
@@ -88,6 +96,7 @@ def main():
 
     print("Lancement de l'application Streamlit...")
     subprocess.run([sys.executable, "run_app.py"])
+
 
 if __name__ == "__main__":
     main()

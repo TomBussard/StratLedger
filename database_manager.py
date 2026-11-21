@@ -1,11 +1,19 @@
 import sqlite3
-import os
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
+
+
+@contextmanager
+def portfolio_connection(path="fund_management.db"):
+    """Commit a successful transaction and release the SQLite file on exit."""
+    with closing(sqlite3.connect(path)) as conn:
+        conn.row_factory = sqlite3.Row
+        with conn:
+            yield conn
+
 
 class DatabaseManager:
-    """
-    Gestionnaire de base de données pour la gestion du fonds.
-    """
+    """Database Manager for Fund Management."""
+
     def __init__(self, db_name="fund_management.db"):
         self.db_name = db_name
         self.conn = None
@@ -13,7 +21,7 @@ class DatabaseManager:
 
     @contextmanager
     def get_connection(self):
-        """Context manager pour la gestion des connexions"""
+        """Context manager for connection management"""
         conn = sqlite3.connect(self.db_name)
         try:
             yield conn
@@ -21,13 +29,13 @@ class DatabaseManager:
             conn.close()
 
     def connect(self):
-        """Établit la connexion avec la base de données."""
+        """Establishes the connection to the database."""
         if self.conn is None:
             self.conn = sqlite3.connect(self.db_name)
             self.cursor = self.conn.cursor()
 
     def close_all_connections(self):
-        """Ferme toutes les connexions à la base de données"""
+        """Close all connections to the database"""
         if self.conn:
             self.conn.close()
             self.conn = None
@@ -42,7 +50,7 @@ class DatabaseManager:
             print(f"Erreur lors de la fermeture des connexions : {str(e)}")
 
     def create_tables(self):
-        """Création des tables nécessaires pour le fonds."""
+        """Creation of tables for the fund."""
         queries = [
             """CREATE TABLE IF NOT EXISTS Clients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,7 +118,7 @@ class DatabaseManager:
                 rendement_realise REAL,
                 nombre_trades_mois INTEGER,
                 FOREIGN KEY (portfolio_id) REFERENCES Portfolios(id)
-            )"""
+            )""",
         ]
 
         for query in queries:
@@ -120,7 +128,7 @@ class DatabaseManager:
         print("Tables créées avec succès.")
 
     def clear_all_tables(self):
-        """Vide toutes les tables sans supprimer la structure"""
+        """Empty all tables without removing the structure"""
         tables = [
             "Portfolio_Stats",
             "Deals",
@@ -129,16 +137,16 @@ class DatabaseManager:
             "Allocations",
             "Portfolios",
             "Products",
-            "Clients"
+            "Clients",
         ]
 
         try:
             self.cursor.execute("PRAGMA foreign_keys = OFF")
-            
+
             for table in tables:
                 self.cursor.execute(f"DELETE FROM {table}")
                 self.cursor.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}'")
-            
+
             self.cursor.execute("PRAGMA foreign_keys = ON")
             self.conn.commit()
             print("Toutes les tables ont été vidées.")
@@ -148,37 +156,37 @@ class DatabaseManager:
             return False
 
     def reset_database(self):
-        """Réinitialise complètement la base de données."""
+        """Resets the database completely."""
         try:
-            # S'assure que nous avons une connexion valide
+            # Make sure we have a valid connection
             if not self.conn:
                 self.connect()
-            
-            # Vide toutes les tables au lieu de supprimer le fichier
+
+            # Empty all tables instead of deleting the file
             if not self.clear_all_tables():
                 return False
-            
-            # Recréer les tables
+
+            # Recreating tables
             self.create_tables()
-            
+
             print("Base de données réinitialisée.")
             return True
-            
+
         except Exception as e:
             print(f"Erreur lors de la réinitialisation : {str(e)}")
             return False
 
     def populate_initial_data(self):
-        """Remplit la base de données avec les données initiales."""
+        """Fills the database with the initial data."""
         try:
             clients_data = [
                 ("Client 1", "Low risk"),
                 ("Client 2", "Low turnover"),
-                ("Client 3", "High yield equity")
+                ("Client 3", "High yield equity"),
             ]
 
             products_data = [
-                # Actions
+                # Equities
                 ("Apple", "Stock", "AAPL"),
                 ("Google", "Stock", "GOOGL"),
                 ("Microsoft", "Stock", "MSFT"),
@@ -199,7 +207,6 @@ class DatabaseManager:
                 ("PepsiCo", "Stock", "PEP"),
                 ("Intel", "Stock", "INTC"),
                 ("Netflix", "Stock", "NFLX"),
-                
                 # ETFs
                 ("S&P 500 ETF", "ETF", "SPY"),
                 ("NASDAQ-100 ETF", "ETF", "QQQ"),
@@ -211,8 +218,7 @@ class DatabaseManager:
                 ("Consumer Discretionary ETF", "ETF", "XLY"),
                 ("Energy Select Sector ETF", "ETF", "XLE"),
                 ("Vanguard Total World ETF", "ETF", "VT"),
-                
-                # Obligations
+                # Bonds
                 ("Treasury Bond ETF", "Bond", "TLT"),
                 ("Corporate Bond ETF", "Bond", "LQD"),
                 ("iShares TIPS Bond ETF", "Bond", "TIP"),
@@ -222,38 +228,35 @@ class DatabaseManager:
                 ("Short-Term Treasury ETF", "Bond", "SHY"),
                 ("Intermediate Treasury ETF", "Bond", "IEF"),
                 ("UltraShort Treasury ETF", "Bond", "TBT"),
-                ("Vanguard Total Bond Market ETF", "Bond", "BND")
+                ("Vanguard Total Bond Market ETF", "Bond", "BND"),
             ]
 
-
-            # Ajoute les clients
+            # Add customers
             self.cursor.executemany(
-                "INSERT INTO Clients (nom, profil_risque) VALUES (?, ?)", 
-                clients_data
+                "INSERT INTO Clients (nom, profil_risque) VALUES (?, ?)", clients_data
             )
 
-            # Récupère les IDs des clients et créer les portefeuilles
+            # Recovers customer IDs and create wallets
             self.cursor.execute("SELECT id, nom, profil_risque FROM Clients")
             clients = self.cursor.fetchall()
 
             for client_id, client_nom, profil in clients:
                 volatilite_cible = 0.10 if profil == "Low risk" else None
                 max_trades = 2 if profil == "Low turnover" else None
-                
+
                 self.cursor.execute(
-                    """INSERT INTO Portfolios 
-                       (client_id, nom, volatilite_cible, max_trades_mensuel) 
+                    """INSERT INTO Portfolios
+                       (client_id, nom, volatilite_cible, max_trades_mensuel)
                        VALUES (?, ?, ?, ?)""",
-                    (client_id, f"Portefeuille de {client_nom}", volatilite_cible, max_trades)
+                    (client_id, f"Portefeuille de {client_nom}", volatilite_cible, max_trades),
                 )
 
-            # Ajoute les produits
+            # Add products
             self.cursor.executemany(
-                "INSERT INTO Products (nom, type, ticker) VALUES (?, ?, ?)", 
-                products_data
+                "INSERT INTO Products (nom, type, ticker) VALUES (?, ?, ?)", products_data
             )
 
-            # Attribution des actifs selon le profil
+            # Allocation of assets according to profile
             self.cursor.execute("SELECT id, profil_risque FROM Clients")
             for client_id, profil in self.cursor.fetchall():
                 if profil == "Low risk":
@@ -265,23 +268,24 @@ class DatabaseManager:
 
                 for asset in assets:
                     self.cursor.execute(
-                        "INSERT INTO Allocations (client_id, actif) VALUES (?, ?)", 
-                        (client_id, asset)
+                        "INSERT INTO Allocations (client_id, actif) VALUES (?, ?)",
+                        (client_id, asset),
                     )
 
             self.conn.commit()
             print("Données initiales ajoutées avec succès.")
-            
+
         except Exception as e:
             print(f"Erreur lors de l'insertion des données : {str(e)}")
             self.conn.rollback()
 
     def close(self):
-        """Ferme la connexion à la base de données."""
+        """Closes the connection to the database."""
         if self.conn:
             self.conn.close()
             self.conn = None
             self.cursor = None
+
 
 if __name__ == "__main__":
     db_manager = DatabaseManager()

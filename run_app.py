@@ -1,10 +1,13 @@
-import os
+"""Start the dashboard beside this launcher."""
+
 import subprocess
 import sys
+from pathlib import Path
 
-print("Lancement automatique de Streamlit...")
-
-# Vérifie que Streamlit n'est pas déjà en cours
-if "streamlit" not in sys.argv:
-    script_path = os.path.abspath("app.py")  # Chemin du fichier app.py
-    subprocess.run([sys.executable, "-m", "streamlit", "run", script_path], check=True)
+if __name__ == "__main__":
+    directory = Path(__file__).resolve().parent
+    subprocess.run(
+        [sys.executable, "-m", "streamlit", "run", str(directory / "app.py")],
+        cwd=directory,
+        check=True,
+    )
